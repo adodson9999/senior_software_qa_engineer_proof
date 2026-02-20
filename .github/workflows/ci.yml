@@ -57,7 +57,7 @@ jobs:
   # Job 2: Smoke Tests (fastest feedback)
   # ----------------------------------------------------------
   smoke-tests:
-    name: "🔥 Smoke Tests"
+    name: "Smoke Tests"
     runs-on: ubuntu-latest
     needs: lint-typecheck
 
@@ -95,7 +95,7 @@ jobs:
   # Job 3: API Tests
   # ----------------------------------------------------------
   api-tests:
-    name: "🔌 API Tests"
+    name: "API Tests"
     runs-on: ubuntu-latest
     needs: lint-typecheck
 
@@ -129,7 +129,7 @@ jobs:
   # Job 4: E2E Tests with Playwright (Cross-Browser)
   # ----------------------------------------------------------
   e2e-playwright:
-    name: "🎭 Playwright E2E — ${{ matrix.browser }}"
+    name: "Playwright E2E — ${{ matrix.browser }}"
     runs-on: ubuntu-latest
     needs: smoke-tests
 
@@ -173,7 +173,7 @@ jobs:
   # Job 5: Performance Tests
   # ----------------------------------------------------------
   performance-tests:
-    name: "⚡ Performance Tests"
+    name: "Performance Tests"
     runs-on: ubuntu-latest
     needs: smoke-tests
 
@@ -197,7 +197,7 @@ jobs:
   # Job 6: Report Generation
   # ----------------------------------------------------------
   generate-report:
-    name: "📊 Generate Allure Report"
+    name: "Generate Allure Report"
     runs-on: ubuntu-latest
     needs: [smoke-tests, api-tests, e2e-playwright]
     if: always()
@@ -245,5 +245,5 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '## ✅ QA Test Report Generated\nAll test suites completed. Download the **allure-report** artifact for full results.\n\n| Suite | Status |\n|-------|--------|\n| 🔥 Smoke | ${{ needs.smoke-tests.result }} |\n| 🔌 API | ${{ needs.api-tests.result }} |\n| 🎭 Playwright E2E | ${{ needs.e2e-playwright.result }} |'
+              body: '## QA Test Report Generated\nAll test suites completed. Download the **allure-report** artifact for full results.\n\n| Suite | Status |\n|-------|--------|\n| 🔥 Smoke | ${{ needs.smoke-tests.result }} |\n| 🔌 API | ${{ needs.api-tests.result }} |\n| 🎭 Playwright E2E | ${{ needs.e2e-playwright.result }} |'
             })

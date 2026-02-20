@@ -70,7 +70,7 @@ jobs:
   # BrowserStack Cross-Browser Regression
   # ----------------------------------------------------------
   browserstack-regression:
-    name: "🌐 BrowserStack Cross-Browser"
+    name: "BrowserStack Cross-Browser"
     runs-on: ubuntu-latest
     needs: full-regression
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -100,7 +100,7 @@ jobs:
   # Mobile Playwright Tests
   # ----------------------------------------------------------
   mobile-tests:
-    name: "📱 Mobile Viewport Tests"
+    name: "Mobile Viewport Tests"
     runs-on: ubuntu-latest
     needs: full-regression
 
@@ -131,7 +131,7 @@ jobs:
   # Quality Gate — Notify on Failure
   # ----------------------------------------------------------
   quality-gate:
-    name: "🚦 Quality Gate"
+    name: "Quality Gate"
     runs-on: ubuntu-latest
     needs: [full-regression, mobile-tests]
     if: always()
@@ -140,10 +140,10 @@ jobs:
       - name: Check quality gate
         run: |
           if [[ "${{ needs.full-regression.result }}" == "failure" ]]; then
-            echo "❌ Full regression FAILED — blocking deployment"
+            echo "Full regression FAILED — blocking deployment"
             exit 1
           fi
-          echo "✅ Quality gate passed"
+          echo "Quality gate passed"
 
       - name: Notify Slack on failure
         if: failure()
@@ -151,7 +151,7 @@ jobs:
         with:
           payload: |
             {
-              "text": "❌ *Proof QA Regression FAILED* on `${{ github.ref_name }}`\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+              "text": "*Proof QA Regression FAILED* on `${{ github.ref_name }}`\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
