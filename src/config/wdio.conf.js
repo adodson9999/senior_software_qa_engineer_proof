@@ -1,8 +1,8 @@
 const path = require("path");
 
-// TS_NODE_TRANSPILE_ONLY=true and TS_NODE_SKIP_IGNORE=true are set via npm script
-// so all WDIO worker processes inherit them automatically.
-// We still register here for the main process.
+// TS_NODE_TRANSPILE_ONLY=true and TS_NODE_SKIP_IGNORE=true set via npm scripts
+// ensure all WDIO worker subprocesses inherit transpile-only mode,
+// bypassing type-checking so Jasmine/WDIO globals don't cause TS errors.
 require("ts-node").register({
   transpileOnly: true,
   skipIgnore: true,
@@ -59,6 +59,8 @@ exports.config = {
   waitforTimeout: 10000,
   connectionRetryTimeout: 120000,
   connectionRetryCount: 3,
+
+  services: ["chromedriver"],
 
   framework: "jasmine",
 
