@@ -1,21 +1,14 @@
 import { BasePage } from "./BasePage";
 
-/**
- * LoginPage
- * Maps to https://the-internet.herokuapp.com/login
- * Mirrors Proof's identity-verification entry flows.
- */
 export class LoginPage extends BasePage {
   protected readonly path = "/login";
 
-  // Selectors
   private readonly selectors = {
     usernameInput: "#username",
     passwordInput: "#password",
     loginButton: 'button[type="submit"]',
     flashMessage: "#flash",
-    flashError: "#flash.error",
-    flashSuccess: "#flash.success",
+    flashError: "#flash.alert",
     logoutButton: "a[href='/logout']",
   };
 
@@ -39,13 +32,5 @@ export class LoginPage extends BasePage {
 
   async logout(): Promise<void> {
     await this.waitAndClick(this.selectors.logoutButton);
-  }
-
-  async getUsernameField(): Promise<WebdriverIO.Element> {
-    return $(this.selectors.usernameInput);
-  }
-
-  async getPasswordField(): Promise<WebdriverIO.Element> {
-    return $(this.selectors.passwordInput);
   }
 }
