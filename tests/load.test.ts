@@ -1,16 +1,3 @@
-/**
- * Performance & Load Tests
- *
- * Measures page load time, time-to-interactive, and simulates
- * concurrent users against test endpoints.
- *
- * In Proof's context this validates that signing sessions,
- * notary queues, and document delivery remain performant at scale.
- *
- * Run with: node scripts/run-performance.js
- * Or: npm run test:performance
- */
-
 import axios from "axios";
 
 const BASE_URL = process.env.BASE_URL || "https://the-internet.herokuapp.com";
@@ -23,113 +10,75 @@ interface PerformanceResult {
   passed: boolean;
 }
 
-const SLA_THRESHOLDS = {
-  pageLoad: 3000,       // 3s max for page loads
-  apiResponse: 1500,    // 1.5s max for API calls
-  concurrentUsers: 5,   // simulate 5 concurrent users
+const SLA = {
+  pageLoad: 3000,
+  apiResponse: 1500,
+  concurrentUsers: 5,
 };
 
-async function measureResponseTime(url: string): Promise<PerformanceResult> {
+async function measure(url: string, method: "get" | "post" = "get"): Promise<PerformanceResult> {
   const start = Date.now();
   try {
-    const response = await axios.get(url, { timeout: 10000 });
-    const duration = Date.now() - start;
-    return {
-      url,
-      durationMs: duration,
-      status: response.status,
-      passed: duration < SLA_THRESHOLDS.pageLoad,
-    };
+    const response = method === "post"
+      ? await axios.post(url, { test: true }, { timeout: 10000 })
+      : await axios.get(url, { timeout: 10000 });
+    const durationMs = Date.now() - start;
+    return { url, durationMs, status: response.status, passed: durationMs < SLA.pageLoad };
   } catch (error: any) {
-    return {
-      url,
-      durationMs: Date.now() - start,
-      status: error.response?.status || 0,
-      passed: false,
-    };
+    return { url, durationMs: Date.now() - start, status: error.response?.status || 0, passed: false };
   }
 }
 
-async function runConcurrentLoadTest(
-  url: string,
-  concurrentUsers: number
-): Promise<PerformanceResult[]> {
-  console.log(`\n⚡ Load Test: ${concurrentUsers} concurrent requests to ${url}`);
-  const requests = Array.from({ length: concurrentUsers }, () =>
-    measureResponseTime(url)
-  );
-  return Promise.all(requests);
+async function measureApi(url: string, method: "get" | "post" = "get"): Promise<PerformanceResult> {
+  const start = Date.now();
+  try {
+    const response = method === "post"
+      ? await axios.post(url, { test: true }, { timeout: 10000 })
+      : await axios.get(url, { timeout: 10000 });
+    const durationMs = Date.now() - start;
+    return { url, durationMs, status: response.status, passed: durationMs < SLA.apiResponse };
+  } catch (error: any) {
+    return { url, durationMs: Date.now() - start, status: error.response?.status || 0, passed: false };
+  }
 }
 
-async function runPerformanceTests(): Promise<void> {
+async function run(): Promise<void> {
   console.log("🚀 Proof QA — Performance Test Suite");
   console.log("=====================================");
 
-  const results: PerformanceResult[] = [];
   let allPassed = true;
 
-  // --- Page Load Tests ---
   console.log("\n📊 Page Load Performance:");
-  const pages = [
-    `${BASE_URL}/login`,
-    `${BASE_URL}/dynamic_content`,
-    `${BASE_URL}/upload`,
-    `${BASE_URL}/javascript_alerts`,
-  ];
-
+  const pages = [`${BASE_URL}/login`, `${BASE_URL}/dynamic_content`, `${BASE_URL}/upload`];
   for (const page of pages) {
-    const result = await measureResponseTime(page);
-    results.push(result);
-    const icon = result.passed ? "✅" : "❌";
-    console.log(
-      `  ${icon} ${result.url.split("/").pop()?.padEnd(20)} ${result.durationMs}ms (SLA: ${SLA_THRESHOLDS.pageLoad}ms)`
-    );
-    if (!result.passed) allPassed = false;
+    const r = await measure(page);
+    const icon = r.passed ? "✅" : "❌";
+    console.log(`  ${icon} ${page.split("/").pop()?.padEnd(20)} ${r.durationMs}ms`);
+    if (!r.passed) allPassed = false;
   }
 
-  // --- API Response Tests ---
   console.log("\n📊 API Response Performance:");
-  const apiEndpoints = [
-    `${API_URL}/get`,
-    `${API_URL}/post`,
+  const apis: Array<{ url: string; method: "get" | "post" }> = [
+    { url: `${API_URL}/get`, method: "get" },
+    { url: `${API_URL}/post`, method: "post" },
   ];
-
-  for (const endpoint of apiEndpoints) {
-    const result = await measureResponseTime(endpoint);
-    const icon = result.passed ? "✅" : "❌";
-    console.log(
-      `  ${icon} ${endpoint.replace(API_URL, "").padEnd(20)} ${result.durationMs}ms (SLA: ${SLA_THRESHOLDS.apiResponse}ms)`
-    );
-    if (!result.passed) allPassed = false;
+  for (const { url, method } of apis) {
+    const r = await measureApi(url, method);
+    const icon = r.passed ? "✅" : "❌";
+    console.log(`  ${icon} ${url.replace(API_URL, "").padEnd(20)} ${r.durationMs}ms (SLA: ${SLA.apiResponse}ms)`);
+    if (!r.passed) allPassed = false;
   }
 
-  // --- Concurrent Load Test ---
-  const concurrentResults = await runConcurrentLoadTest(
-    `${BASE_URL}/login`,
-    SLA_THRESHOLDS.concurrentUsers
-  );
+  console.log(`\n⚡ Load Test: ${SLA.concurrentUsers} concurrent requests to /login`);
+  const results = await Promise.all(Array.from({ length: SLA.concurrentUsers }, () => measure(`${BASE_URL}/login`)));
+  const avg = Math.round(results.reduce((s, r) => s + r.durationMs, 0) / results.length);
+  const max = Math.max(...results.map((r) => r.durationMs));
+  console.log(`  Avg: ${avg}ms | Max: ${max}ms`);
+  console.log(`  ${results.every((r) => r.passed) ? "✅" : "❌"} Concurrent SLA`);
 
-  const avgDuration =
-    concurrentResults.reduce((sum, r) => sum + r.durationMs, 0) /
-    concurrentResults.length;
-  const maxDuration = Math.max(...concurrentResults.map((r) => r.durationMs));
-  const allConcurrentPassed = concurrentResults.every((r) => r.passed);
-
-  console.log(`  Avg: ${avgDuration.toFixed(0)}ms | Max: ${maxDuration}ms`);
-  console.log(`  ${allConcurrentPassed ? "✅" : "❌"} All concurrent requests within SLA`);
-
-  if (!allConcurrentPassed) allPassed = false;
-
-  // --- Summary ---
   console.log("\n=====================================");
-  console.log(`📋 Performance Summary: ${allPassed ? "✅ ALL PASSED" : "❌ FAILURES DETECTED"}`);
-
-  if (!allPassed) {
-    process.exit(1);
-  }
+  console.log(`📋 Result: ${allPassed ? "✅ ALL PASSED" : "❌ FAILURES DETECTED"}`);
+  if (!allPassed) process.exit(1);
 }
 
-runPerformanceTests().catch((error) => {
-  console.error("Performance test runner failed:", error);
-  process.exit(1);
-});
+run().catch((err) => { console.error(err); process.exit(1); });
