@@ -57,7 +57,7 @@ jobs:
   # Job 2: Smoke Tests (fastest feedback)
   # ----------------------------------------------------------
   smoke-tests:
-    name: "🔥 Smoke Tests"
+    name: "Smoke Tests"
     runs-on: ubuntu-latest
     needs: lint-typecheck
     steps:

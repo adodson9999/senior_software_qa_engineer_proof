@@ -60,8 +60,6 @@ exports.config = {
   connectionRetryTimeout: 120000,
   connectionRetryCount: 3,
 
-  services: ["chromedriver"],
-
   framework: "jasmine",
 
   reporters: [
