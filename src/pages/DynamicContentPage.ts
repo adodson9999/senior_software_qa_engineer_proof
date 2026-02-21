@@ -9,9 +9,12 @@ export class DynamicContentPage extends BasePage {
   };
 
   async getContentTexts(): Promise<string[]> {
-    const elements: WebdriverIO.Element[] = await $$(this.selectors.contentText);
-    const texts: string[] = await Promise.all(elements.map((el: WebdriverIO.Element) => el.getText()));
-    return texts;
+    const results: string[] = [];
+    const elements = await $$(this.selectors.contentText);
+    for (const el of elements) {
+      results.push(await el.getText());
+    }
+    return results;
   }
 
   async reloadWithStaticContent(): Promise<void> {
