@@ -1,0 +1,157 @@
+# ============================================================
+# CD Pipeline — Full Regression on Main
+# Runs after merge to main. Executes complete regression suite
+# including BrowserStack cross-browser and load tests.
+# ============================================================
+
+name: CD — Full Regression
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    # Nightly regression run at 2AM UTC
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  NODE_VERSION: "20"
+  TEST_ENV: ${{ github.event.inputs.environment || 'staging' }}
+
+jobs:
+  # ----------------------------------------------------------
+  # Full E2E Regression (all suites)
+  # ----------------------------------------------------------
+  full-regression:
+    name: "🔁 Full E2E Regression"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Run full regression suite
+        run: npm run test:regression
+        env:
+          BASE_URL: ${{ secrets.BASE_URL }}
+          TEST_ENV: ${{ env.TEST_ENV }}
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-results-${{ github.run_number }}
+          path: allure-results/
+          retention-days: 30
+
+  # ----------------------------------------------------------
+  # BrowserStack Cross-Browser Regression
+  # ----------------------------------------------------------
+  browserstack-regression:
+    name: "BrowserStack Cross-Browser"
+    runs-on: ubuntu-latest
+    needs: full-regression
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run BrowserStack cross-browser tests
+        run: npx wdio run src/config/wdio.browserstack.conf.ts
+        env:
+          BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
+          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
+          BASE_URL: ${{ secrets.BASE_URL }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+
+  # ----------------------------------------------------------
+  # Mobile Playwright Tests
+  # ----------------------------------------------------------
+  mobile-tests:
+    name: "Mobile Viewport Tests"
+    runs-on: ubuntu-latest
+    needs: full-regression
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright
+        run: npx playwright install --with-deps
+
+      - name: Run mobile viewport tests
+        run: |
+          npx playwright test --project=mobile-chrome
+          npx playwright test --project=mobile-safari
+        env:
+          BASE_URL: ${{ secrets.BASE_URL }}
+
+  # ----------------------------------------------------------
+  # Quality Gate — Notify on Failure
+  # ----------------------------------------------------------
+  quality-gate:
+    name: "Quality Gate"
+    runs-on: ubuntu-latest
+    needs: [full-regression, mobile-tests]
+    if: always()
+
+    steps:
+      - name: Check quality gate
+        run: |
+          if [[ "${{ needs.full-regression.result }}" == "failure" ]]; then
+            echo "Full regression FAILED — blocking deployment"
+            exit 1
+          fi
+          echo "Quality gate passed"
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.25.0
+        with:
+          payload: |
+            {
+              "text": "*Proof QA Regression FAILED* on `${{ github.ref_name }}`\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

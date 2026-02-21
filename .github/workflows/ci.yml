@@ -1,0 +1,237 @@
+# ============================================================
+# CI Pipeline — Pull Request Validation
+# Runs on every PR targeting main. Required to pass before merge.
+# ============================================================
+
+name: CI — PR Validation
+
+on:
+  push:
+    branches:
+      - "feature/**"
+      - "fix/**"
+      - "chore/**"
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+  BASE_URL: "https://the-internet.herokuapp.com"
+  API_BASE_URL: "https://httpbin.org"
+  TEST_ENV: "staging"
+
+jobs:
+  # ----------------------------------------------------------
+  # Job 1: Lint & Type Check
+  # ----------------------------------------------------------
+  lint-typecheck:
+    name: "🔍 Lint & Type Check"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run TypeScript compiler check
+        run: npx tsc --noEmit
+
+  # ----------------------------------------------------------
+  # Job 2: Smoke Tests (fastest feedback)
+  # ----------------------------------------------------------
+  smoke-tests:
+    name: "Smoke Tests"
+    runs-on: ubuntu-latest
+    needs: lint-typecheck
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+      - run: npm ci
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+      - run: npm run test:smoke
+        env:
+          BASE_URL: ${{ env.BASE_URL }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-results
+          path: allure-results/
+          retention-days: 7
+
+  # ----------------------------------------------------------
+  # Job 3: API Tests
+  # ----------------------------------------------------------
+  api-tests:
+    name: "API Tests"
+    runs-on: ubuntu-latest
+    needs: lint-typecheck
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run API tests
+        run: npm run test:api
+        env:
+          API_BASE_URL: ${{ env.API_BASE_URL }}
+
+      - name: Upload API test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-test-results
+          path: coverage/
+          retention-days: 7
+
+  # ----------------------------------------------------------
+  # Job 4: E2E Tests with Playwright (Cross-Browser)
+  # ----------------------------------------------------------
+  e2e-playwright:
+    name: "Playwright E2E — ${{ matrix.browser }}"
+    runs-on: ubuntu-latest
+    needs: smoke-tests
+
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Run Playwright tests
+        run: npx playwright test --project=${{ matrix.browser }}
+        env:
+          BASE_URL: ${{ env.BASE_URL }}
+
+      - name: Upload Playwright results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results-${{ matrix.browser }}
+          path: |
+            playwright-report/
+            allure-results/
+          retention-days: 7
+
+  # ----------------------------------------------------------
+  # Job 5: Performance Tests
+  # ----------------------------------------------------------
+  performance-tests:
+    name: "Performance Tests"
+    runs-on: ubuntu-latest
+    needs: smoke-tests
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run performance tests
+        run: npm run test:performance
+
+  # ----------------------------------------------------------
+  # Job 6: Report Generation
+  # ----------------------------------------------------------
+  generate-report:
+    name: "Generate Allure Report"
+    runs-on: ubuntu-latest
+    needs: [smoke-tests, api-tests, e2e-playwright]
+    if: always()
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all test artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-results/
+
+      - name: Merge allure results
+        run: |
+          mkdir -p allure-results
+          find all-results -name "*.json" -exec cp {} allure-results/ \;
+          find all-results -name "*.xml" -exec cp {} allure-results/ \;
+
+      - name: Setup Java (for Allure CLI)
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Install Allure CLI
+        run: npm install -g allure-commandline
+
+      - name: Generate Allure report
+        run: allure generate allure-results --clean -o allure-report
+
+      - name: Upload Allure report
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report
+          path: allure-report/
+          retention-days: 30
+
+      - name: Post PR summary
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## QA Test Report Generated\nAll test suites completed. Download the **allure-report** artifact for full results.\n\n| Suite | Status |\n|-------|--------|\n| 🔥 Smoke | ${{ needs.smoke-tests.result }} |\n| 🔌 API | ${{ needs.api-tests.result }} |\n| 🎭 Playwright E2E | ${{ needs.e2e-playwright.result }} |'
+            })
