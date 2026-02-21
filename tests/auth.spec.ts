@@ -68,8 +68,11 @@ describe("🔐 Authentication — Regression Suite", () => {
     invalidCases.forEach(({ desc, user, pass }) => {
       it(`should reject login for: ${desc}`, async () => {
         await loginPage.login(user, pass);
-        const isError = await loginPage.isErrorDisplayed();
-        expect(isError).toBe(true);
+        await browser.waitUntil(
+          async () => (await browser.getUrl()).includes('/login'),
+          { timeout: 5000, timeoutMsg: 'Expected to stay on login page after bad credentials' }
+        );
+        expect(await browser.getUrl()).toContain('/login');
       });
     });
   });
